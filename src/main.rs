@@ -1,4 +1,5 @@
 const a0:f64 = 1.0;
+use nalgebra_glm as glm;
 
 /*===========Gamma func==================*/
 fn gamma(n:i32)-> f64{
@@ -77,12 +78,67 @@ fn assoc_legendre(l: i32, m_abs: i32, x: f64) -> f64{
        pdf 
         
  }
+fn angular_pdf(theta:f64, l:i32, m:i32) -> f64{
+    let x: f64 = theta.cos();
+    let plm: f64 = assoc_legendre(l, m.abs(), x);
 
+    let result:f64 = theta.sin() * plm * plm;
+
+    result
+
+    }
+
+fn build_cdf(pdf_vals: &[f64]) -> Vec<f64>{
+    let mut cdf: Vec<f64> = Vec::new();
+    let mut sum: f64 = 0.0;
+    
+
+//create a cdf number line
+    for &vals in pdf_vals {
+        sum += vals;
+        cdf.push(sum);
+        }
+
+//normalize by dividing each value with total
+    for v in &mut cdf{
+        
+        *v /= sum;
+        }
+
+
+    cdf 
+    }
+
+fn spherical_to_cartesian(r: f32, theta: f32, phi: f32) -> glm::Vec3{
+        let x: f32 = r * theta.sin() * phi.cos();
+        let y: f32 = r * theta.cos();
+        let z: f32 = r * theta.sin() * phi.sin();
+        
+        glm::vec3(x,y,z)
+
+        }
+
+fn cdf_sample(u:f64, cdf: &[f64]) -> usize {
+   
+//basically go to each no and see if it is < u if yes keep going if no return the idx  
+        let idx: usize = cdf.partition_point(|&v| v < u);
+        
+        idx.min(cdf.len() - 1) 
+        //clamp the result to prevent crash
+        //makes sure it doesnt return index that is smaller than cdf.len by one
+    }
+
+fn quantum_sampler
 
 /*======================Main============================*/
 fn main() {
-
-    println!("{}",radial_pdf(0.0,1,0));
-    println!("{}",radial_pdf(1.0,1,0));
-    println!("{}",gamma(5));
+ 
+ let pdf = vec![1.0, 2.0, 3.0, 4.0];
+    let cdf = build_cdf(&pdf);
+    
+    for val in &cdf {
+        println!("{}", val);
+    } 
+    println!("{}", spherical_to_cartesian(1.0,0.0,0.0));
+    println!("{}", cdf_sample(0.5,&cdf));
 }
