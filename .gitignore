@@ -1,0 +1,14 @@
+/target
+# Ignore everything
+*
+
+# But not the hydrogen folder
+!hydrogen/
+!hydrogen/**
+
+# Also don't ignore these common files
+!README.md
+!.gitignore
+!Cargo.toml
+!Cargo.lock
+!LICENSE
