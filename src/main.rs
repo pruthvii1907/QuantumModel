@@ -60,35 +60,29 @@ fn assoc_legendre(l: i32, m_abs: i32, x: f64) -> f64{
           plm
     }
 /*======================pdf==============================*/
- fn sample_radial_pdf(n:i32, l: i32 ){
+ fn radial_pdf(r:f64, n: i32, l:i32 ) -> f64{
     
-    let rMax: f64 = 10.0 * (n as f64) * a0;
-    let N: i32 = 4096;
-    let dr:f64 = rMax/((N - 1) as f6)4;
-    let mut sum: f64 = 0.0;
-    for i in 0..N{
-        let r: f64 = (i as f64) * dr;
-        let rho: f64 = 2.0 * r/ ((n as f64) * a)0;
-        
+
+        let rho: f64 = 2.0 * r/ ((n as f64) * a0);
         let k: i32 = n - l -1;
         let alpha: i32 = 2 * l + 1;
-        
-        let Lag: f64 = assoc_laguerre((k as f64),alpha,rho);
-        
-        let norm: f64 = 2.0/ (((n as f64) * a0).powf(3.0) * gamma((n-l) as f64) /(2.0 * n * gamma(n+l+1)));
 
-       let R:f64 = (norm).sqrt() * (-rho/2.0).exp() * rho.powf(l as f64) * Lag;
-        let pdf: f64 = r * r * R * R;
-        sum += pdf;
-        }
+        let Lag: f64 = assoc_laguerre(k ,alpha,rho);
 
-     }
+       let norm: f64 = (2.0 / ((n as f64) * a0)).powi(3) *  gamma(n - l)  /  (2.0 * (n as f64) * gamma(n + l + 1));
+
+       let R: f64 = norm.sqrt()  *  (-rho/2.0).exp()  *  rho.powf(l as f64)  *  Lag; 
+       let pdf: f64 = r * r  *  R * R;
+        
+       pdf 
+        
+ }
 
 
 /*======================Main============================*/
 fn main() {
 
-    println!("{}",assoc_legendre(1,1,0.5));
-    println!("{}",gamma(20));
+    println!("{}",radial_pdf(0.0,1,0));
+    println!("{}",radial_pdf(1.0,1,0));
     println!("{}",gamma(5));
 }
