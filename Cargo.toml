@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 nalgebra-glm = "0.18"
+rand = "0.8"
+glam = "0.32.1"

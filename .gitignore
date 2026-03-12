@@ -9,6 +9,8 @@
 # Also don't ignore these common files
 !README.md
 !.gitignore
-!Cargo.toml
 !Cargo.lock
+!src/main.rs
+!src/octree.rs
+!src/octree/particle.rs
 !LICENSE

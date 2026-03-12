@@ -1,5 +1,17 @@
 const a0:f64 = 1.0;
+
+mod octree;
+use octree::Octree;
+
+use std::f64::consts::PI;
+use rand::thread_rng;
+use rand::Rng;
+use rand::rngs::ThreadRng;
 use nalgebra_glm as glm;
+
+
+
+/*=============BEGINING OF MATH FUNCS=======================*/
 
 /*===========Gamma func==================*/
 fn gamma(n:i32)-> f64{
@@ -87,7 +99,7 @@ fn angular_pdf(theta:f64, l:i32, m:i32) -> f64{
     result
 
     }
-
+/*===========cdf========================*/
 fn build_cdf(pdf_vals: &[f64]) -> Vec<f64>{
     let mut cdf: Vec<f64> = Vec::new();
     let mut sum: f64 = 0.0;
@@ -108,7 +120,7 @@ fn build_cdf(pdf_vals: &[f64]) -> Vec<f64>{
 
     cdf 
     }
-
+/*============convert spherical to cartesian===============*/
 fn spherical_to_cartesian(r: f32, theta: f32, phi: f32) -> glm::Vec3{
         let x: f32 = r * theta.sin() * phi.cos();
         let y: f32 = r * theta.cos();
@@ -117,19 +129,106 @@ fn spherical_to_cartesian(r: f32, theta: f32, phi: f32) -> glm::Vec3{
         glm::vec3(x,y,z)
 
         }
-
+/*========random num to physical pos================*/
 fn cdf_sample(u:f64, cdf: &[f64]) -> usize {
    
-//basically go to each no and see if it is < u if yes keep going if no return the idx  
-        let idx: usize = cdf.partition_point(|&v| v < u);
-        
+//go to each num & see if num < u yes- go on, no- return idx  
+
+        let idx: usize = cdf.partition_point(|&v| v < u);               
         idx.min(cdf.len() - 1) 
-        //clamp the result to prevent crash
-        //makes sure it doesnt return index that is smaller than cdf.len by one
+
+//clamp the result to prevent crash
+
+}
+/*=============END OF MATH FUNCS=======================*/
+
+struct quantum_sampler{
+    n: i32,
+    l: i32,
+    m: i32,
+    cdf_r: Vec<f64>,
+    cdf_theta: Vec<f64>,
+    r_max: f64,
+    rng: ThreadRng,
     }
+ 
+impl quantum_sampler{
 
-fn quantum_sampler
+        const N_R: usize = 4096;
+        const N_THETA: usize = 2048;
 
+    fn new(n: i32,l: i32,m: i32) -> Self{
+
+        let mut pdf_vals_r: Vec<f64> = Vec::new();
+        let mut pdf_vals_a: Vec<f64> = Vec::new();
+
+        let r_max = 10.0 * (n * n) as f64 * a0;
+        let dr: f64 = r_max / (Self::N_R-1) as f64;
+
+        for i in 0..Self::N_R{
+
+            let r: f64 = (i as f64) * dr;
+            let vals = radial_pdf(r,n,l);
+            pdf_vals_r.push(vals);
+            
+            }
+        let cdf_r = build_cdf(&pdf_vals_r);
+
+        let dtheta: f64 = PI / (Self::N_THETA - 1) as f64;
+
+        for j in 0..Self::N_THETA{
+                       
+            let theta: f64 = j as f64 * dtheta;
+            let vals_a = angular_pdf(theta, l, m);
+            pdf_vals_a.push(vals_a);
+
+            }
+         let cdf_theta = build_cdf(&pdf_vals_a);
+
+        Self{
+            n,
+            l,
+            m,
+            r_max,
+            cdf_r,
+            cdf_theta,
+            rng: thread_rng(),
+            }
+    }
+ 
+   
+fn sample_r(&self, rng: &mut impl Rng) -> f32{
+        
+        let u: f64 = rng.r#gen();       //creates a random number between 0&1
+        
+        let idx: usize = cdf_sample(u,&self.cdf_r);
+        let r =  idx as f64 * self.r_max / (Self::N_R - 1) as f64;
+
+        r as f32
+
+        }
+
+fn sample_theta(&self, rng: &mut impl Rng) -> f32{
+
+        let u: f64 = rng.r#gen();
+        
+        let idx: usize = cdf_sample(u,&self.cdf_theta);
+        let theta = idx as f64 * PI / (Self::N_THETA - 1) as f64;
+        theta as f32
+       }
+
+
+fn sample_phi(&self, rng: &mut impl Rng) -> f32{
+//the simplest one
+//always uniform - no cdf sample      
+
+        let u: f64 = rng.r#gen();
+        
+        let res = u * 2.0 * PI;
+        res as f32
+
+       }
+}
 /*======================Main============================*/
 fn main() {
  
