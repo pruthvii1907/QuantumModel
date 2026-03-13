@@ -1,7 +1,10 @@
 const a0:f64 = 1.0;
 
 mod octree;
+mod particle;
+
 use octree::Octree;
+use particle::Particle;
 
 use std::f64::consts::PI;
 use rand::thread_rng;
