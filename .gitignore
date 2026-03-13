@@ -10,7 +10,5 @@
 !README.md
 !.gitignore
 !Cargo.lock
-!src/main.rs
-!src/octree.rs
-!src/octree/particle.rs
+!src
 !LICENSE
