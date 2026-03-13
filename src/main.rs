@@ -1,17 +1,19 @@
-const a0:f64 = 1.0;
+const a0:f64 = 1.0;       //bohr's radius
+const HBAR: f32 = 1.0;    //reduced plancks constant
+const M_E: f32 = 1.0;     //electron mass
 
 mod octree;
 mod particle;
 
-use octree::Octree;
-use particle::Particle;
+use crate::octree::Octree;
+use crate::particle::Particle;
 
 use std::f64::consts::PI;
 use rand::thread_rng;
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use nalgebra_glm as glm;
-
+use glm::Vec3;
 
 
 /*=============BEGINING OF MATH FUNCS=======================*/
@@ -232,6 +234,23 @@ fn sample_phi(&self, rng: &mut impl Rng) -> f32{
 
        }
 }
+
+
+fn probability_flow(pos: &glm::Vec3, m: i32) -> Vec3{
+    let r = glm::length(&pos);
+    if r < 1e-6 {
+        return glm::vec3(0.0, 0.0, 0.0);
+        }
+    let theta = (pos.y/r).acos();
+    let phi = pos.z.atan2(pos.x);
+    let sin_theta = theta.sin().max(1e-4); //clamp to 1e-4
+    let v_mag = HBAR as i32 * m/ ((M_E * r * sin_theta) as i32);
+
+    glm::vec3((-v_mag * phi.sin() as i32) as f32, 0.0, (v_mag*phi.cos() as i32) as f32)
+
+    }
+
+fn color
 /*======================Main============================*/
 fn main() {
  
