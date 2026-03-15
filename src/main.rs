@@ -14,6 +14,7 @@ use rand::Rng;
 use rand::rngs::ThreadRng;
 use nalgebra_glm as glm;
 use glm::Vec3;
+use glm::vec3;
 
 
 /*=============BEGINING OF MATH FUNCS=======================*/
@@ -202,9 +203,9 @@ impl quantum_sampler{
     }
  
    
-fn sample_r(&self, rng: &mut impl Rng) -> f32{
+fn sample_r(&mut self) -> f32{
         
-        let u: f64 = rng.r#gen();       //creates a random number between 0&1
+        let u: f64 = self.rng.r#gen();       //creates a random number between 0&1
         
         let idx: usize = cdf_sample(u,&self.cdf_r);
         let r =  idx as f64 * self.r_max / (Self::N_R - 1) as f64;
@@ -213,9 +214,9 @@ fn sample_r(&self, rng: &mut impl Rng) -> f32{
 
         }
 
-fn sample_theta(&self, rng: &mut impl Rng) -> f32{
+fn sample_theta(&mut self) -> f32{
 
-        let u: f64 = rng.r#gen();
+        let u: f64 = self.rng.r#gen();
         
         let idx: usize = cdf_sample(u,&self.cdf_theta);
         let theta = idx as f64 * PI / (Self::N_THETA - 1) as f64;
@@ -223,16 +224,24 @@ fn sample_theta(&self, rng: &mut impl Rng) -> f32{
        }
 
 
-fn sample_phi(&self, rng: &mut impl Rng) -> f32{
+fn sample_phi(&mut self) -> f32{
 //the simplest one
 //always uniform - no cdf sample      
 
-        let u: f64 = rng.r#gen();
+        let u: f64 = self.rng.r#gen();
         
         let res = u * 2.0 * PI;
         res as f32
 
        }
+
+pub fn sample(&mut self) -> Vec3{
+    let r = self.sample_r();
+    let theta = self.sample_theta();
+    let phi = self.sample_phi();
+
+    spherical_to_cartesian(r,theta,phi)
+    }
 }
 
 
@@ -241,25 +250,173 @@ fn probability_flow(pos: &glm::Vec3, m: i32) -> Vec3{
     if r < 1e-6 {
         return glm::vec3(0.0, 0.0, 0.0);
         }
-    let theta = (pos.y/r).acos();
-    let phi = pos.z.atan2(pos.x);
-    let sin_theta = theta.sin().max(1e-4); //clamp to 1e-4
-    let v_mag = HBAR as i32 * m/ ((M_E * r * sin_theta) as i32);
+    let rho = (pos.x * pos.x + pos.y * pos.y).sqrt().max(1e-6);
+    let v_mag = HBAR * m as f32 / (M_E * rho as f32);
 
-    glm::vec3((-v_mag * phi.sin() as i32) as f32, 0.0, (v_mag*phi.cos() as i32) as f32)
+    let dir = glm::normalize(&glm::vec3(-pos.y, pos.x, 0.0));
+    dir * (v_mag as f32)
 
     }
 
-fn color
-/*======================Main============================*/
-fn main() {
- 
- let pdf = vec![1.0, 2.0, 3.0, 4.0];
-    let cdf = build_cdf(&pdf);
+fn particle_color(psi_squared: f64, max_psi: f64) -> glm::Vec3{
+    let t = (psi_squared / max_psi).clamp(0.0, 1.0);
+    let mut color: Vec3 = vec3(0.0, 0.0, 0.0);
+
+    if t < 0.25{
+        let local_t = t/0.25;
+        let black = vec3(0.0,0.0,0.0);
+        let purple = vec3(0.5, 0.0, 0.5);
+        color = black + (purple - black) * local_t as f32 //purple and black
+        }
+    else if t < 0.5{
+        let local_t = (t-0.25)/0.25;
+        let purple = vec3(0.5, 0.0, 0.5);
+        let magenta = vec3(1.0, 0.0, 1.0);
+        color = purple + (magenta - purple) * local_t as f32;   //magenta and purple
+        }
+    else if t < 0.75{
+        let local_t = (t-0.5)/0.25;
+        let magenta = vec3(1.0, 0.0, 1.0);
+        let ochre = vec3(0.8, 0.5, 0.0);
+        color = magenta + (ochre - magenta) * local_t as f32; //ochre and magenta
+        }
+    else {
+        let local_t = (t-0.75)/0.25;
+        let ochre = vec3(0.8, 0.5, 0.0);
+        let white = vec3(1.0,1.0,1.0);
+        color = ochre + (white - ochre) * local_t as f32; //white
+        }
+
+        color
+    }
+
+fn particle_gen(n: i32, m:i32, l: i32, num_particles: usize) -> Vec<Particle> {
     
-    for val in &cdf {
-        println!("{}", val);
-    } 
-    println!("{}", spherical_to_cartesian(1.0,0.0,0.0));
-    println!("{}", cdf_sample(0.5,&cdf));
+    let mut sampler = quantum_sampler::new(n,l,m);
+    let mut particles: Vec<Particle> = Vec::new();
+
+    let mut max_psi: f64 = 0.0;
+    for _ in 0..1000{
+        let pos = sampler.sample();  //different random positions
+        
+        //find r, theta and phi
+        let r = glm::length(&pos);
+        let theta = (pos.z/r).acos();
+        let phi = pos.y.atan2(pos.x);
+
+        let psi_sq = radial_pdf(r as f64, n, l) * angular_pdf(theta as f64, l, m);
+
+        if psi_sq > max_psi{
+            max_psi = psi_sq;
+            }
+        }
+
+     for _ in 0..num_particles{
+        let pos = sampler.sample(); //another set of random positions
+        
+        //find r,theta and phi again
+        let r = glm::length(&pos);
+        let theta = (pos.z/r).acos();
+        let phi = pos.y.atan2(pos.x);
+
+        let psi_sq = radial_pdf(r as f64,n,l) * angular_pdf(theta as f64,l, m);
+        let color = particle_color(psi_sq,max_psi);
+        let velocity = probability_flow(&pos, m);
+
+        let color_array = [color.x, color.y, color.z, 1.0];
+        let particle = Particle::new(pos,color_array);
+
+        particles.push(particle);
+         }
+
+    particles
+    }
+/*======================Camera============================*/
+struct Camera {
+    position: Vec3,
+    target: Vec3,
+    up: Vec3,
+    fov: f32,   //field of view
+    aspect: f32,
+    near: f32,
+    far: f32,
+
+    //Orbital camera params
+    distance: f32,  //distance from target
+    theta: f32,     //vertical angle
+    phi: f32,       //horizontal angle
+    }
+
+impl Camera{
+    pub fn new(position: Vec3, target: Vec3, up: Vec3, aspect: f32) -> Self{
+        let to_target = target - position;
+        let distance = glm::length(&to_target);
+
+        let theta = (to_target.y/distance).acos();
+        let phi = to_target.z.atan2(to_target.x);
+
+        Self{
+            position,
+            target,
+            up,
+            fov: 45.0,
+            aspect,
+            near: 0.1,
+            far: 1000.0,
+            distance,
+            theta,
+            phi,
+            }
 }
+
+//view_matrix to tell the camera where it is looking
+pub fn view_matrix(&self) -> glm::Mat4{
+    glm::look_at(&self.position, &self.up, &self.target)
+    }
+
+//projection_matrix to gain perspective make far away things smaller
+pub fn projection_matrix(&self) -> glm::Mat4{
+    glm::perspective(self.aspect, self.fov.to_radians(), self.near, self.far)
+    }
+
+pub fn orbit(&mut self, delta_theta: f32, delta_phi: f32){ //change the theta and phi calues and then calculate new pos
+    self.theta += delta_theta;
+    self.phi += delta_phi;
+
+    self.theta = self.theta.clamp(0.1, std::f32::consts::PI - 0.1);  //clamp the theta to 0.1 to pi-1 to prevent flipping
+
+    let x = self.distance * self.theta.sin() * self.phi.cos();   //calculate new x,y and z values
+    let y = self.distance * self.theta.cos();
+    let z = self.distance * self.theta.sin() * self.phi.sin();
+
+    self.position = self.target + glm::vec3(x,y,z);         //update the position
+ }
+
+pub fn zoom(&mut self, delta: f32) {
+    //same as orbit find clamp update
+    self.distance += delta;
+    
+    self.distance = self.distance.clamp(1.0, 500.0);
+    
+    let x = self.distance * self.theta.sin() * self.phi.cos();
+    let y = self.distance * self.theta.cos();
+    let z = self.distance * self.theta.sin() * self.phi.sin();
+    }
+}
+/*===========================================Main==================================================*/
+fn main() {
+    println!("Generating particles for 2p orbital (n=2, l=1, m=0)...");
+    
+    let particles = particle_gen(2, 0, 1, 1000);  // n=2, m=0, l=1, 1000 particles
+    
+    println!("Generated {} particles", particles.len());
+    
+    // Print first 5 particles to see what they look like
+    for (i, particle) in particles.iter().take(5).enumerate() {
+        println!("Particle {}: pos = ({:.3}, {:.3}, {:.3}), color = ({:.3}, {:.3}, {:.3}, {:.3})", 
+            i,
+            particle.position.x, particle.position.y, particle.position.z,
+            particle.color[0], particle.color[1], particle.color[2], particle.color[3]
+        );
+    }
+} 
