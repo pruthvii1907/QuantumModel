@@ -1,13 +1,18 @@
 const a0:f64 = 1.0;       //bohr's radius
 const HBAR: f32 = 1.0;    //reduced plancks constant
 const M_E: f32 = 1.0;     //electron mass
+const HEIGHT: u32 = 1200;
+const WIDTH: u32 = 900;
 
 mod octree;
 mod particle;
 
 use crate::octree::Octree;
 use crate::particle::Particle;
-
+use glfw::{Action, Context, Key};
+use std::ffi::CString;
+use std::ptr;
+use std::mem;
 use std::f64::consts::PI;
 use rand::thread_rng;
 use rand::Rng;
@@ -371,7 +376,7 @@ impl Camera{
 
 //view_matrix to tell the camera where it is looking
 pub fn view_matrix(&self) -> glm::Mat4{
-    glm::look_at(&self.position, &self.up, &self.target)
+    glm::look_at(&self.position, &self.target, &self.up)
     }
 
 //projection_matrix to gain perspective make far away things smaller
@@ -401,22 +406,271 @@ pub fn zoom(&mut self, delta: f32) {
     let x = self.distance * self.theta.sin() * self.phi.cos();
     let y = self.distance * self.theta.cos();
     let z = self.distance * self.theta.sin() * self.phi.sin();
+    self.position = self.target + glm::vec3(x,y,z);
     }
 }
+/*====================================Shader source code===========================================*/
+const VERTEX_SHADER_SRC: &str = r#"
+#version 330 core
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aInstancePos;
+layout (location = 2) in vec4 aInstanceColor;
+
+out vec4 vertexColor;
+
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+
+void main() {
+    vec3 worldPos = aPos * 0.65 + aInstancePos;
+    gl_Position = projection * view * model * vec4(worldPos, 1.0);
+    vertexColor = aInstanceColor;
+}
+"#;
+
+const FRAGMENT_SHADER_SRC: &str = r#"
+#version 330 core
+in vec4 vertexColor;
+out vec4 FragColor;
+
+void main() {
+    FragColor = vertexColor;
+}
+"#;
+/*=====================================Helper funcs==========================================*/
+fn compile_shader(src: &str, ty: gl::types::GLenum) -> u32 {
+    unsafe {
+        let shader = gl::CreateShader(ty);
+        let c_str = CString::new(src.as_bytes()).unwrap();
+        gl::ShaderSource(shader, 1, &c_str.as_ptr(), ptr::null());
+        gl::CompileShader(shader);
+
+        let mut success = 0;
+        gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut success);
+        if success == 0 {
+            let mut len = 0;
+            gl::GetShaderiv(shader, gl::INFO_LOG_LENGTH, &mut len);
+            let mut buffer = vec![0u8; len as usize];
+            gl::GetShaderInfoLog(shader, len, ptr::null_mut(), buffer.as_mut_ptr() as *mut i8);
+            panic!("Shader compilation failed: {}", String::from_utf8_lossy(&buffer));
+        }
+        shader
+    }
+}
+
+fn link_program(vs: u32, fs: u32) -> u32 {
+    unsafe {
+        let program = gl::CreateProgram();
+        gl::AttachShader(program, vs);
+        gl::AttachShader(program, fs);
+        gl::LinkProgram(program);
+
+        let mut success = 0;
+        gl::GetProgramiv(program, gl::LINK_STATUS, &mut success);
+        if success == 0 {
+            let mut len = 0;
+            gl::GetProgramiv(program, gl::INFO_LOG_LENGTH, &mut len);
+            let mut buffer = vec![0u8; len as usize];
+            gl::GetProgramInfoLog(program, len, ptr::null_mut(), buffer.as_mut_ptr() as *mut i8);
+            panic!("Program linking failed: {}", String::from_utf8_lossy(&buffer));
+        }
+
+        gl::DeleteShader(vs);
+        gl::DeleteShader(fs);
+        program
+    }
+}
+
+fn create_sphere(subdivisions: u32) -> Vec<f32> {
+    let mut vertices = Vec::new();
+    let pi = std::f32::consts::PI;
+    
+    for i in 0..=subdivisions {
+        let theta = i as f32 * pi / subdivisions as f32;
+        for j in 0..=subdivisions {
+            let phi = j as f32 * 2.0 * pi / subdivisions as f32;
+            
+            let x = theta.sin() * phi.cos();
+            let y = theta.cos();
+            let z = theta.sin() * phi.sin();
+            
+            vertices.push(x);
+            vertices.push(y);
+            vertices.push(z);
+        }
+    }
+    vertices
+}
+
 /*===========================================Main==================================================*/
 fn main() {
-    println!("Generating particles for 2p orbital (n=2, l=1, m=0)...");
-    
-    let particles = particle_gen(2, 0, 1, 1000);  // n=2, m=0, l=1, 1000 particles
-    
-    println!("Generated {} particles", particles.len());
-    
-    // Print first 5 particles to see what they look like
-    for (i, particle) in particles.iter().take(5).enumerate() {
-        println!("Particle {}: pos = ({:.3}, {:.3}, {:.3}), color = ({:.3}, {:.3}, {:.3}, {:.3})", 
-            i,
-            particle.position.x, particle.position.y, particle.position.z,
-            particle.color[0], particle.color[1], particle.color[2], particle.color[3]
-        );
+    // Initialize GLFW
+    let mut glfw = glfw::init(glfw::fail_on_errors).unwrap();
+    glfw.window_hint(glfw::WindowHint::ContextVersion(3, 3));
+    glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
+
+    // Create window
+    let (mut window, events) = glfw
+        .create_window(HEIGHT, WIDTH, "Hydrogen Orbital Visualizer", glfw::WindowMode::Windowed)
+        .expect("Failed to create GLFW window");
+
+    window.make_current();
+    window.set_key_polling(true);
+    window.set_cursor_pos_polling(true);
+    window.set_scroll_polling(true);
+
+    // Load OpenGL
+    gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
+
+    unsafe {
+        gl::Enable(gl::DEPTH_TEST);
+        gl::ClearColor(0.0, 0.0, 0.0, 1.0);
     }
-} 
+
+    // Compile shaders
+    let vertex_shader = compile_shader(VERTEX_SHADER_SRC, gl::VERTEX_SHADER);
+    let fragment_shader = compile_shader(FRAGMENT_SHADER_SRC, gl::FRAGMENT_SHADER);
+    let shader_program = link_program(vertex_shader, fragment_shader);
+
+    // Create sphere mesh
+    let sphere_vertices = create_sphere(10);
+    let mut sphere_vbo = 0;
+    let mut sphere_vao = 0;
+
+    unsafe {
+        gl::GenVertexArrays(1, &mut sphere_vao);
+        gl::GenBuffers(1, &mut sphere_vbo);
+
+        gl::BindVertexArray(sphere_vao);
+        gl::BindBuffer(gl::ARRAY_BUFFER, sphere_vbo);
+        gl::BufferData(
+            gl::ARRAY_BUFFER,
+            (sphere_vertices.len() * mem::size_of::<f32>()) as isize,
+            sphere_vertices.as_ptr() as *const _,
+            gl::STATIC_DRAW,
+        );
+
+        gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, 3 * mem::size_of::<f32>() as i32, ptr::null());
+        gl::EnableVertexAttribArray(0);
+    }
+
+    // Generate particles
+    println!("Generating particles...");
+    let particles = particle_gen(2, 0, 3, 450000); // n=3, m=0, l=2, 100k particles
+    println!("Generated {} particles", particles.len());
+
+    // Extract positions and colors
+    let mut positions = Vec::new();
+    let mut colors = Vec::new();
+    for p in &particles {
+        positions.push(p.position.x);
+        positions.push(p.position.y);
+        positions.push(p.position.z);
+        
+        colors.push(p.color[0]);
+        colors.push(p.color[1]);
+        colors.push(p.color[2]);
+        colors.push(p.color[3]);
+    }
+
+    // Create instance VBOs
+    let mut instance_pos_vbo = 0;
+    let mut instance_color_vbo = 0;
+
+    unsafe {
+        gl::BindVertexArray(sphere_vao);
+
+        // Position buffer
+        gl::GenBuffers(1, &mut instance_pos_vbo);
+        gl::BindBuffer(gl::ARRAY_BUFFER, instance_pos_vbo);
+        gl::BufferData(
+            gl::ARRAY_BUFFER,
+            (positions.len() * mem::size_of::<f32>()) as isize,
+            positions.as_ptr() as *const _,
+            gl::STATIC_DRAW,
+        );
+        gl::VertexAttribPointer(1, 3, gl::FLOAT, gl::FALSE, 3 * mem::size_of::<f32>() as i32, ptr::null());
+        gl::EnableVertexAttribArray(1);
+        gl::VertexAttribDivisor(1, 1);
+
+        // Color buffer
+        gl::GenBuffers(1, &mut instance_color_vbo);
+        gl::BindBuffer(gl::ARRAY_BUFFER, instance_color_vbo);
+        gl::BufferData(
+            gl::ARRAY_BUFFER,
+            (colors.len() * mem::size_of::<f32>()) as isize,
+            colors.as_ptr() as *const _,
+            gl::STATIC_DRAW,
+        );
+        gl::VertexAttribPointer(2, 4, gl::FLOAT, gl::FALSE, 4 * mem::size_of::<f32>() as i32, ptr::null());
+        gl::EnableVertexAttribArray(2);
+        gl::VertexAttribDivisor(2, 1);
+    }
+
+    // Create camera
+    let mut camera = Camera::new(
+        glm::vec3(0.0, 0.0, 50.0),
+        glm::vec3(0.0, 0.0, 0.0),
+        glm::vec3(0.0, 1.0, 0.0),
+        (HEIGHT / WIDTH) as f32,
+    );
+
+    let mut last_x = 640.0;
+    let mut last_y = 360.0;
+    let mut first_mouse = true;
+
+    // Main loop
+    while !window.should_close() {
+        glfw.poll_events();
+
+        for (_, event) in glfw::flush_messages(&events) {
+            match event {
+                glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
+                    window.set_should_close(true)
+                }
+                glfw::WindowEvent::CursorPos(xpos, ypos) => {
+                    if first_mouse {
+                        last_x = xpos as f32;
+                        last_y = ypos as f32;
+                        first_mouse = false;
+                    }
+
+                    let xoffset = (xpos as f32 - last_x) * 0.005;
+                    let yoffset = (last_y - ypos as f32) * 0.005;
+                    last_x = xpos as f32;
+                    last_y = ypos as f32;
+
+                    camera.orbit(yoffset, xoffset);
+                }
+                glfw::WindowEvent::Scroll(_, yoffset) => {
+                    camera.zoom(-yoffset as f32 * 2.0);
+                }
+                _ => {}
+            }
+        }
+
+        unsafe {
+            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+
+            gl::UseProgram(shader_program);
+
+            let model = glm::Mat4::identity();
+            let view = camera.view_matrix();
+            let projection = camera.projection_matrix();
+
+            let model_loc = gl::GetUniformLocation(shader_program, b"model\0".as_ptr() as *const i8);
+            let view_loc = gl::GetUniformLocation(shader_program, b"view\0".as_ptr() as *const i8);
+            let proj_loc = gl::GetUniformLocation(shader_program, b"projection\0".as_ptr() as *const i8);
+
+            gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, model.as_ptr());
+            gl::UniformMatrix4fv(view_loc, 1, gl::FALSE, view.as_ptr());
+            gl::UniformMatrix4fv(proj_loc, 1, gl::FALSE, projection.as_ptr());
+
+            gl::BindVertexArray(sphere_vao);
+            gl::DrawArraysInstanced(gl::TRIANGLES, 0, sphere_vertices.len() as i32 / 3, particles.len() as i32);
+        }
+
+        window.swap_buffers();
+    }
+}
