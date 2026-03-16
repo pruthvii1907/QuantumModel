@@ -248,8 +248,9 @@ pub fn sample(&mut self) -> Vec3{
     spherical_to_cartesian(r,theta,phi)
     }
 }
+/*==============End of the sampler====================*/
 
-
+//calculate azumthal velocity
 fn probability_flow(pos: &glm::Vec3, m: i32) -> Vec3{
     let r = glm::length(&pos);
     if r < 1e-6 {
@@ -263,10 +264,12 @@ fn probability_flow(pos: &glm::Vec3, m: i32) -> Vec3{
 
     }
 
+//particle colors
 fn particle_color(psi_squared: f64, max_psi: f64) -> glm::Vec3{
     let t = (psi_squared / max_psi).clamp(0.0, 1.0);
     let mut color: Vec3 = vec3(0.0, 0.0, 0.0);
 
+//linearly interpolate between colors for a smoother transition
     if t < 0.25{
         let local_t = t/0.25;
         let black = vec3(0.0,0.0,0.0);
@@ -295,21 +298,22 @@ fn particle_color(psi_squared: f64, max_psi: f64) -> glm::Vec3{
         color
     }
 
+//particle genrator
 fn particle_gen(n: i32, m:i32, l: i32, num_particles: usize) -> Vec<Particle> {
     
     let mut sampler = quantum_sampler::new(n,l,m);
     let mut particles: Vec<Particle> = Vec::new();
 
     let mut max_psi: f64 = 0.0;
-    for _ in 0..1000{
-        let pos = sampler.sample();  //different random positions
+    for _ in 0..1000{                //1000 just to get an idea of maxumum psi
+        let pos = sampler.sample();  //random positions
         
         //find r, theta and phi
         let r = glm::length(&pos);
         let theta = (pos.z/r).acos();
         let phi = pos.y.atan2(pos.x);
 
-        let psi_sq = radial_pdf(r as f64, n, l) * angular_pdf(theta as f64, l, m);
+        let psi_sq = radial_pdf(r as f64, n, l) * angular_pdf(theta as f64, l, m); //psi_sq gives the probability 
 
         if psi_sq > max_psi{
             max_psi = psi_sq;
@@ -328,7 +332,7 @@ fn particle_gen(n: i32, m:i32, l: i32, num_particles: usize) -> Vec<Particle> {
         let color = particle_color(psi_sq,max_psi);
         let velocity = probability_flow(&pos, m);
 
-        let color_array = [color.x, color.y, color.z, 1.0];
+        let color_array = [color.x, color.y, color.z, 1.0];   //[R,G,B,A] A is the alpha or the opacity
         let particle = Particle::new(pos,color_array);
 
         particles.push(particle);
@@ -398,7 +402,7 @@ pub fn orbit(&mut self, delta_theta: f32, delta_phi: f32){ //change the theta an
  }
 
 pub fn zoom(&mut self, delta: f32) {
-    //same as orbit find clamp update
+    //same as orbit - find, clamp, update
     self.distance += delta;
     
     self.distance = self.distance.clamp(1.0, 500.0);
@@ -409,7 +413,7 @@ pub fn zoom(&mut self, delta: f32) {
     self.position = self.target + glm::vec3(x,y,z);
     }
 }
-/*====================================Shader source code===========================================*/
+/*====================================Shader and fragment source code===========================================*/
 const VERTEX_SHADER_SRC: &str = r#"
 #version 330 core
 layout (location = 0) in vec3 aPos;
@@ -423,7 +427,7 @@ uniform mat4 view;
 uniform mat4 projection;
 
 void main() {
-    vec3 worldPos = aPos * 0.65 + aInstancePos;
+    vec3 worldPos = aPos * 0.05 + aInstancePos;
     gl_Position = projection * view * model * vec4(worldPos, 1.0);
     vertexColor = aInstanceColor;
 }
@@ -482,25 +486,49 @@ fn link_program(vs: u32, fs: u32) -> u32 {
     }
 }
 
-fn create_sphere(subdivisions: u32) -> Vec<f32> {
+fn create_sphere(rings: u32, sectors: u32) -> (Vec<f32>, Vec<u32>) {  //rings - latitude, sectors - longitude
     let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
     let pi = std::f32::consts::PI;
-    
-    for i in 0..=subdivisions {
-        let theta = i as f32 * pi / subdivisions as f32;
-        for j in 0..=subdivisions {
-            let phi = j as f32 * 2.0 * pi / subdivisions as f32;
-            
-            let x = theta.sin() * phi.cos();
-            let y = theta.cos();
-            let z = theta.sin() * phi.sin();
-            
+    let r = 1.0;
+
+    for i in 0..=rings{
+        let theta = i as f32 * pi / rings as f32;
+        let sin_theta = theta.sin();
+        let cos_theta = theta.cos();
+
+        for j in 0..=sectors{
+            let phi = j as f32 * 2.0 * pi / sectors as f32;
+            let sin_phi = phi.sin();
+            let cos_phi = phi.cos();
+
+            let x = r * sin_theta * cos_phi;
+            let y = r * cos_theta;
+            let z = r * sin_theta * sin_phi;
+
             vertices.push(x);
             vertices.push(y);
             vertices.push(z);
+            }
         }
-    }
-    vertices
+
+    for i in 0..rings{
+        for j in 0..sectors{
+            let first = i * (sectors + 1) + j;
+            let second = first + sectors + 1;
+
+            indices.push(first);    //Vertices for 1st triangle A,B,C
+            indices.push(second);
+            indices.push(first + 1);
+
+            indices.push(second);   //Vertices for 2nd triagnle A,B,C
+            indices.push(second + 1);
+            indices.push(first + 1);
+            }
+        }
+
+    (vertices,indices)
 }
 
 /*===========================================Main==================================================*/
@@ -534,20 +562,33 @@ fn main() {
     let shader_program = link_program(vertex_shader, fragment_shader);
 
     // Create sphere mesh
-    let sphere_vertices = create_sphere(10);
+    let (sphere_vertices, sphere_indices) = create_sphere(100, 100);
     let mut sphere_vbo = 0;
     let mut sphere_vao = 0;
+    let mut sphere_ebo = 0;
 
     unsafe {
         gl::GenVertexArrays(1, &mut sphere_vao);
         gl::GenBuffers(1, &mut sphere_vbo);
+        gl::GenBuffers(1, &mut sphere_ebo);
 
         gl::BindVertexArray(sphere_vao);
+
+        //vertex buffer
         gl::BindBuffer(gl::ARRAY_BUFFER, sphere_vbo);
         gl::BufferData(
             gl::ARRAY_BUFFER,
             (sphere_vertices.len() * mem::size_of::<f32>()) as isize,
             sphere_vertices.as_ptr() as *const _,
+            gl::STATIC_DRAW,
+        );
+
+        //index buffer
+        gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, sphere_ebo);
+        gl::BufferData(
+            gl::ELEMENT_ARRAY_BUFFER,
+            (sphere_indices.len() * mem::size_of::<u32>()) as isize,
+            sphere_indices.as_ptr() as*const _,
             gl::STATIC_DRAW,
         );
 
@@ -557,8 +598,12 @@ fn main() {
 
     // Generate particles
     println!("Generating particles...");
-    let particles = particle_gen(2, 0, 3, 450000); // n=3, m=0, l=2, 100k particles
+
+    let particles = particle_gen(3, 1, 2, 100000); // n=3, m=0, l=2, 100k particles
+
     println!("Generated {} particles", particles.len());
+    let mut octree = Octree::new();
+    octree.rebuild(&particles);
 
     // Extract positions and colors
     let mut positions = Vec::new();
@@ -668,7 +713,11 @@ fn main() {
             gl::UniformMatrix4fv(proj_loc, 1, gl::FALSE, projection.as_ptr());
 
             gl::BindVertexArray(sphere_vao);
-            gl::DrawArraysInstanced(gl::TRIANGLES, 0, sphere_vertices.len() as i32 / 3, particles.len() as i32);
+            gl::DrawElementsInstanced(gl::TRIANGLES,
+             sphere_indices.len() as i32,
+             gl::UNSIGNED_INT,
+             ptr::null(),
+             particles.len() as i32);
         }
 
         window.swap_buffers();
