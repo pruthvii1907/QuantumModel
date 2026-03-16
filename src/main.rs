@@ -562,7 +562,7 @@ fn main() {
     let shader_program = link_program(vertex_shader, fragment_shader);
 
     // Create sphere mesh
-    let (sphere_vertices, sphere_indices) = create_sphere(100, 100);
+    let (sphere_vertices, sphere_indices) = create_sphere(10, 10);
     let mut sphere_vbo = 0;
     let mut sphere_vao = 0;
     let mut sphere_ebo = 0;
@@ -599,7 +599,7 @@ fn main() {
     // Generate particles
     println!("Generating particles...");
 
-    let particles = particle_gen(3, 1, 2, 100000); // n=3, m=0, l=2, 100k particles
+    let particles = particle_gen(3, 0, 1, 250000); // n=3, m=0, l=2, 100k particles
 
     println!("Generated {} particles", particles.len());
     let mut octree = Octree::new();
