@@ -1,8 +1,8 @@
 const a0:f64 = 1.0;       //bohr's radius
 const HBAR: f32 = 1.0;    //reduced plancks constant
 const M_E: f32 = 1.0;     //electron mass
-const HEIGHT: u32 = 1200;
-const WIDTH: u32 = 900;
+const HEIGHT: u32 = 1920;
+const WIDTH: u32 = 1080;
 
 mod octree;
 mod particle;
@@ -427,7 +427,7 @@ uniform mat4 view;
 uniform mat4 projection;
 
 void main() {
-    vec3 worldPos = aPos * 0.05 + aInstancePos;
+    vec3 worldPos = aPos * 0.059 + aInstancePos;
     gl_Position = projection * view * model * vec4(worldPos, 1.0);
     vertexColor = aInstanceColor;
 }
@@ -487,7 +487,7 @@ fn link_program(vs: u32, fs: u32) -> u32 {
 }
 
 fn create_sphere(rings: u32, sectors: u32) -> (Vec<f32>, Vec<u32>) {  //rings - latitude, sectors - longitude
-    let mut vertices = Vec::new();
+    let mut vertices = Vec::new();   //corner points
     let mut indices = Vec::new();
 
     let pi = std::f32::consts::PI;
@@ -599,11 +599,9 @@ fn main() {
     // Generate particles
     println!("Generating particles...");
 
-    let particles = particle_gen(3, 0, 1, 250000); // n=3, m=0, l=2, 100k particles
+    let particles = particle_gen(4, 0, 3, 550000); // n=3, m=0, l=2, 100k particles
 
     println!("Generated {} particles", particles.len());
-    let mut octree = Octree::new();
-    octree.rebuild(&particles);
 
     // Extract positions and colors
     let mut positions = Vec::new();
